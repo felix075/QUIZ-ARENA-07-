@@ -2,30 +2,26 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, { cors: { origin: "*" } });
+const fetch = require('node-fetch'); // Make sure to run: npm install node-fetch
 
+app.use(express.json()); // Essential to read the prompt from your game
 app.use(express.static(__dirname));
 
-let queue = [];
-let scores = {};
-
-io.on('connection', (socket) => {
-    socket.on('findRandom', () => {
-        if(queue.length > 0) {
-            let opponent = queue.shift();
-            let room = "rnd_" + socket.id;
-            socket.join(room); opponent.join(room);
-            io.to(room).emit('startGame', room);
-        } else { queue.push(socket); }
-    });
-
-    socket.on('joinRoom', (code) => { socket.join(code); io.to(code).emit('startGame', code); });
-    socket.on('submitScore', (d) => {
-        scores[d.room] = scores[d.room] || [];
-        scores[d.room].push({id: socket.id, score: d.score});
-        if(scores[d.room].length === 2) {
-            let winner = scores[d.room][0].score > scores[d.room][1].score ? "Player 1" : "Player 2";
-            io.to(d.room).emit('winner', winner);
-        }
-    });
+// The Secure Proxy Route
+app.post('/api/generate', async (req, res) => {
+    const { prompt } = req.body;
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        const data = await response.json();
+        res.json(data);
+    } catch (err) {
+        res.status(500).send("Error generating questions");
+    }
 });
+
+// ... Keep your existing socket.io code here ...
 http.listen(process.env.PORT || 3000);
