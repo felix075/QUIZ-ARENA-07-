@@ -1,27 +1,40 @@
-// Add these events to your existing server.js inside io.on('connection', ...)
+const express = require('express');
+const app = express();
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require("socket.io");
+const io = new Server(server);
 
-// Create a private room
-socket.on('createPrivateRoom', (data) => {
-    socket.join(data.roomCode); // User joins the unique room
-    console.log(`User ${data.username} created private room: ${data.roomCode}`);
+// Serve your static files
+app.use(express.static(__dirname));
+
+io.on('connection', (socket) => {
+    console.log('A user connected: ' + socket.id);
+
+    // --- ALL YOUR FEATURES GO INSIDE HERE ---
+
+    // Feature: Create Private Room
+    socket.on('createPrivateRoom', (data) => {
+        socket.join(data.roomCode);
+        console.log(`Room created: ${data.roomCode}`);
+    });
+
+    // Feature: Join Private Room
+    socket.on('joinPrivateRoom', (data) => {
+        socket.join(data.roomCode);
+        console.log(`User joined room: ${data.roomCode}`);
+    });
+
+    // Add any other features (like game logic, chat, etc.) here
+    // Just make sure they are inside these curly braces!
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected');
+    });
 });
 
-// Join a private room
-socket.on('joinPrivateRoom', (data) => {
-    // Check if the room exists before letting the user join
-    const room = io.sockets.adapter.rooms.get(data.roomCode);
-    
-    if (room) {
-        socket.join(data.roomCode); // Add user to the existing room
-        console.log(`User ${data.username} joined private room: ${data.roomCode}`);
-        
-        // Notify both players in the room that the match can start
-        io.to(data.roomCode).emit('matchFound', { 
-            message: "Private match started!", 
-            roomId: data.roomCode 
-        });
-    } else {
-        // Send an error back to the client if the room code is invalid
-        socket.emit('error', { message: "Room not found. Please check the code." });
-    }
+// Use the port provided by Render
+const port = process.env.PORT || 3000;
+server.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
