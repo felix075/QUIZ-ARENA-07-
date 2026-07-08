@@ -1,79 +1,84 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Quiz Arena 07</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        body { margin: 0; background: radial-gradient(circle, #1e293b, #0f172a); color: white; font-family: sans-serif; text-align: center; }
-        .screen { padding-top: 20vh; display: none; }
+        body { background: linear-gradient(135deg, #0f172a, #1e293b); color: white; font-family: 'Segoe UI', sans-serif; text-align: center; }
+        .screen { display: none; padding-top: 50px; }
         .active { display: block; }
-        .btn { padding: 15px 30px; margin: 10px; border-radius: 25px; border: none; background: #38bdf8; font-weight: bold; cursor: pointer; }
-        #timer { font-size: 40px; color: #fbbf24; }
+        .btn { padding: 15px 30px; margin: 10px; border-radius: 25px; border: none; background: #38bdf8; cursor: pointer; font-weight: bold; }
+        .green { background: #22c55e !important; }
+        .red { background: #ef4444 !important; }
+        #timer { font-size: 30px; color: #fbbf24; }
     </style>
 </head>
 <body>
     <div style="position:absolute; top:10px; width:100%;">
-        <button onclick="setLang('en')">English</button>
-        <button onclick="setLang('ne')">नेपाली</button>
+        <button onclick="lang='en'">English</button>
+        <button onclick="lang='ne'">नेपाली</button>
     </div>
 
-    <div id="login-screen" class="screen active">
+    <div id="login" class="screen active">
         <h1>QUIZ ARENA 07</h1>
-        <input id="name" placeholder="Enter name">
-        <button class="btn" onclick="enterGame()">Start</button>
+        <input id="name" placeholder="Enter Name" style="padding:10px; border-radius:10px;">
+        <button class="btn" onclick="document.getElementById('login').className='screen'; document.getElementById('menu').className='screen active';">Enter</button>
     </div>
 
-    <div id="menu-screen" class="screen">
-        <button class="btn" onclick="start('solo')">Solo</button>
-        <button class="btn" onclick="start('online')">Online</button>
-        <button class="btn" onclick="createPrivate()">Create Private</button>
-        <button class="btn" onclick="joinPrivate()">Join Private</button>
-        <div id="subjects">
-            <button onclick="start('Geography')">Geography</button>
-            <button onclick="start('History')">History</button>
-            <button onclick="start('Sports')">Sports</button>
-        </div>
+    <div id="menu" class="screen">
+        <button class="btn" onclick="socket.emit('findRandom')">Online Multiplayer</button>
+        <button class="btn" onclick="let c=prompt('Enter Code'); socket.emit('joinRoom', c)">Join Private</button>
+        <button class="btn" onclick="let c=Math.random().toString(36).substr(2,6); alert('Code: '+c); socket.emit('joinRoom', c)">Create Private</button>
+        <button class="btn" onclick="startSolo()">Solo Play (Loksewa)</button>
     </div>
 
-    <div id="game-screen" class="screen">
+    <div id="game" class="screen">
         <div id="timer">10</div>
-        <h2 id="q">Question</h2>
+        <progress id="prog" value="0" max="10" style="width:60%"></progress>
+        <h2 id="q">Loading...</h2>
         <div id="opts"></div>
     </div>
 
     <script>
-        const socket = io();
-        const GEMINI_API_KEY = "AQ.Ab8RN6Kl8hOwRETvUwpGzTDbowgDIFETlAM9MCQPVFHXXOsYKQ"; // <--- ADD YOUR KEY HERE
-        let name = '', mode = '', score = 0, time = 10, qIdx = 0, questions = [];
+        const socket = io('https://YOUR_RENDER_URL.onrender.com');
+        const API_KEY = "AQ.Ab8RN6KE6zzD229yymY_Q6ABzGGGYqTW_y7xWFok80rnjrzgiA";
+        let lang='en', qCount=0, score=0, time=10, questions=[], room='';
 
-        function setLang(l) { alert('Language: ' + l); }
-        function enterGame() { name = document.getElementById('name').value; document.getElementById('login-screen').className = 'screen'; document.getElementById('menu-screen').className = 'screen active'; }
-        
-        async function start(m) {
-            mode = m;
-            document.getElementById('menu-screen').className = 'screen';
-            document.getElementById('game-screen').className = 'screen active';
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-            const res = await fetch(url, { method: "POST", headers: {"Content-Type": "application/json"}, 
-                body: JSON.stringify({contents: [{parts: [{text: `Generate 10 MCQs on ${mode}. JSON: [{"question":"...","options":["A","B","C","D"],"correct":"A"}]`}]}]})});
+        socket.on('startGame', (r) => { room=r; startSolo(); });
+
+        async function startSolo() {
+            document.getElementById('menu').className = 'screen';
+            document.getElementById('game').className = 'screen active';
+            const res = await fetch(`https://generativelanguage.googleapis.com/.../generateContent?key=${API_KEY}`, {
+                method: "POST", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({contents: [{parts: [{text: `10 Loksewa MCQs in ${lang}. JSON: [{"q":"...","o":["A","B","C","D"],"c":"A"}]`}]}]})
+            });
             const data = await res.json();
             questions = JSON.parse(data.candidates[0].content.parts[0].text.replace(/```json|```/g, ""));
             render();
         }
 
         function render() {
-            let q = questions[qIdx];
-            document.getElementById('q').innerText = q.question;
+            if(qCount >= 10) return socket.emit('submitScore', {room, score});
+            let q = questions[qCount]; time=10;
+            document.getElementById('q').innerText = q.q;
+            document.getElementById('prog').value = qCount;
             let opts = document.getElementById('opts'); opts.innerHTML = '';
-            q.options.forEach(o => {
+            q.o.forEach(o => {
                 let b = document.createElement('button'); b.className = 'btn'; b.innerText = o;
-                b.onclick = () => { if(o === q.correct) score += 10; qIdx++; render(); };
+                b.onclick = () => {
+                    if(o === q.c) { b.className+=' green'; score += time; } 
+                    else b.className+=' red';
+                    setTimeout(next, 500);
+                };
                 opts.appendChild(b);
             });
+            let interval = setInterval(() => {
+                time--; document.getElementById('timer').innerText = time;
+                if(time <= 0) { clearInterval(interval); next(); }
+            }, 1000);
         }
-        function createPrivate() { socket.emit('createPrivateRoom', { roomCode: 'ROOM1' }); alert('Room created'); }
-        function joinPrivate() { socket.emit('joinPrivateRoom', { roomCode: 'ROOM1' }); alert('Joined'); }
+        function next() { qCount++; render(); }
+        socket.on('winner', (w) => alert('Winner is: ' + w));
     </script>
 </body>
 </html>

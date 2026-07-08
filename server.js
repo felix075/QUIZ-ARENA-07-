@@ -1,37 +1,31 @@
 const express = require('express');
 const app = express();
-const http = require('http');
-const server = http.createServer(app);
-const { Server } = require("socket.io");
-const io = new Server(server);
+const http = require('http').createServer(app);
+const io = require('socket.io')(http, { cors: { origin: "*" } });
 
 app.use(express.static(__dirname));
 
-let matchmakingQueue = [];
+let queue = [];
+let scores = {};
 
 io.on('connection', (socket) => {
-    console.log('User connected: ' + socket.id);
+    socket.on('findRandom', () => {
+        if(queue.length > 0) {
+            let opponent = queue.shift();
+            let room = "rnd_" + socket.id;
+            socket.join(room); opponent.join(room);
+            io.to(room).emit('startGame', room);
+        } else { queue.push(socket); }
+    });
 
-    // Global Matchmaking
-    socket.on('findOnline', () => {
-        if (matchmakingQueue.length > 0) {
-            let opponent = matchmakingQueue.shift();
-            let roomId = "room_" + socket.id;
-            socket.join(roomId);
-            opponent.join(roomId);
-            io.to(roomId).emit('matchFound', { roomId });
-        } else {
-            matchmakingQueue.push(socket);
+    socket.on('joinRoom', (code) => { socket.join(code); io.to(code).emit('startGame', code); });
+    socket.on('submitScore', (d) => {
+        scores[d.room] = scores[d.room] || [];
+        scores[d.room].push({id: socket.id, score: d.score});
+        if(scores[d.room].length === 2) {
+            let winner = scores[d.room][0].score > scores[d.room][1].score ? "Player 1" : "Player 2";
+            io.to(d.room).emit('winner', winner);
         }
     });
-
-    socket.on('createPrivateRoom', (data) => { socket.join(data.roomCode); });
-    socket.on('joinPrivateRoom', (data) => { socket.join(data.roomCode); });
-
-    socket.on('disconnect', () => {
-        matchmakingQueue = matchmakingQueue.filter(s => s.id !== socket.id);
-    });
 });
-
-const port = process.env.PORT || 3000;
-server.listen(port, () => console.log(`Server running on ${port}`));
+http.listen(process.env.PORT || 3000);
