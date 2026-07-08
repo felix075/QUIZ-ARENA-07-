@@ -5,36 +5,33 @@ const server = http.createServer(app);
 const { Server } = require("socket.io");
 const io = new Server(server);
 
-// Serve your static files
 app.use(express.static(__dirname));
 
+let matchmakingQueue = [];
+
 io.on('connection', (socket) => {
-    console.log('A user connected: ' + socket.id);
+    console.log('User connected: ' + socket.id);
 
-    // --- ALL YOUR FEATURES GO INSIDE HERE ---
-
-    // Feature: Create Private Room
-    socket.on('createPrivateRoom', (data) => {
-        socket.join(data.roomCode);
-        console.log(`Room created: ${data.roomCode}`);
+    // Global Matchmaking
+    socket.on('findOnline', () => {
+        if (matchmakingQueue.length > 0) {
+            let opponent = matchmakingQueue.shift();
+            let roomId = "room_" + socket.id;
+            socket.join(roomId);
+            opponent.join(roomId);
+            io.to(roomId).emit('matchFound', { roomId });
+        } else {
+            matchmakingQueue.push(socket);
+        }
     });
 
-    // Feature: Join Private Room
-    socket.on('joinPrivateRoom', (data) => {
-        socket.join(data.roomCode);
-        console.log(`User joined room: ${data.roomCode}`);
-    });
-
-    // Add any other features (like game logic, chat, etc.) here
-    // Just make sure they are inside these curly braces!
+    socket.on('createPrivateRoom', (data) => { socket.join(data.roomCode); });
+    socket.on('joinPrivateRoom', (data) => { socket.join(data.roomCode); });
 
     socket.on('disconnect', () => {
-        console.log('User disconnected');
+        matchmakingQueue = matchmakingQueue.filter(s => s.id !== socket.id);
     });
 });
 
-// Use the port provided by Render
 const port = process.env.PORT || 3000;
-server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-});
+server.listen(port, () => console.log(`Server running on ${port}`));

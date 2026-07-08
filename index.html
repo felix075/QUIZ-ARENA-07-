@@ -2,89 +2,78 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Felix Space - AI Loksewa Arena</title>
-    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
+    <title>Quiz Arena 07</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        /* (Keep all your existing CSS here) */
-        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #fff; margin: 0; padding: 20px; text-align: center; }
-        .container { max-width: 650px; margin: auto; background: #1e293b; padding: 25px; border-radius: 12px; }
-        .hidden { display: none; }
-        button { padding: 12px; font-size: 16px; border-radius: 6px; border: none; margin: 8px; background: #38bdf8; color: #0f172a; font-weight: bold; cursor: pointer; }
-        .cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        body { margin: 0; background: radial-gradient(circle, #1e293b, #0f172a); color: white; font-family: sans-serif; text-align: center; }
+        .screen { padding-top: 20vh; display: none; }
+        .active { display: block; }
+        .btn { padding: 15px 30px; margin: 10px; border-radius: 25px; border: none; background: #38bdf8; font-weight: bold; cursor: pointer; }
+        #timer { font-size: 40px; color: #fbbf24; }
     </style>
 </head>
 <body>
-
-<div class="container" id="main-card">
-    <div id="login-screen">
-        <input type="text" id="username-input" placeholder="Your Name...">
-        <button onclick="login()">Enter Arena</button>
+    <div style="position:absolute; top:10px; width:100%;">
+        <button onclick="setLang('en')">English</button>
+        <button onclick="setLang('ne')">नेपाली</button>
     </div>
 
-    <div id="menu-screen" class="hidden">
-        <button onclick="startMatch('solo')" style="background:#4ade80;">🎯 Solo Practice Mode</button>
-        <button onclick="startOnlineMatchmaking()" style="background:#f59e0b;">⚔️ Find Online Opponent</button>
+    <div id="login-screen" class="screen active">
+        <h1>QUIZ ARENA 07</h1>
+        <input id="name" placeholder="Enter name">
+        <button class="btn" onclick="enterGame()">Start</button>
+    </div>
+
+    <div id="menu-screen" class="screen">
+        <button class="btn" onclick="start('solo')">Solo</button>
+        <button class="btn" onclick="start('online')">Online</button>
+        <button class="btn" onclick="createPrivate()">Create Private</button>
+        <button class="btn" onclick="joinPrivate()">Join Private</button>
+        <div id="subjects">
+            <button onclick="start('Geography')">Geography</button>
+            <button onclick="start('History')">History</button>
+            <button onclick="start('Sports')">Sports</button>
+        </div>
+    </div>
+
+    <div id="game-screen" class="screen">
+        <div id="timer">10</div>
+        <h2 id="q">Question</h2>
+        <div id="opts"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        const GEMINI_API_KEY = "AQ.Ab8RN6Kl8hOwRETvUwpGzTDbowgDIFETlAM9MCQPVFHXXOsYKQ"; // <--- ADD YOUR KEY HERE
+        let name = '', mode = '', score = 0, time = 10, qIdx = 0, questions = [];
+
+        function setLang(l) { alert('Language: ' + l); }
+        function enterGame() { name = document.getElementById('name').value; document.getElementById('login-screen').className = 'screen'; document.getElementById('menu-screen').className = 'screen active'; }
         
-        <div style="margin-top: 20px; border-top: 1px solid #334155; padding-top: 10px;">
-            <h3>💎 Private Match</h3>
-            <button onclick="createPrivateMatch()" style="background:#8b5cf6; color:white;">Create Private Match</button>
-            <button onclick="promptJoinMatch()" style="background:#ec4899; color:white;">Join Private Match</button>
-        </div>
+        async function start(m) {
+            mode = m;
+            document.getElementById('menu-screen').className = 'screen';
+            document.getElementById('game-screen').className = 'screen active';
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            const res = await fetch(url, { method: "POST", headers: {"Content-Type": "application/json"}, 
+                body: JSON.stringify({contents: [{parts: [{text: `Generate 10 MCQs on ${mode}. JSON: [{"question":"...","options":["A","B","C","D"],"correct":"A"}]`}]}]})});
+            const data = await res.json();
+            questions = JSON.parse(data.candidates[0].content.parts[0].text.replace(/```json|```/g, ""));
+            render();
+        }
 
-        <h3>📜 Choose Category</h3>
-        <div class="cat-grid">
-            <button onclick="startMatch('geo')">🗺️ Geography</button>
-            <button onclick="startMatch('hist')">⏳ History</button>
-            <button onclick="startMatch('const')">📜 Constitution</button>
-            <button onclick="startMatch('gk')">💡 General Knowledge</button>
-        </div>
-    </div>
-
-    <div id="game-screen" class="hidden">
-        <h2 id="question-text">Loading...</h2>
-        <div id="options-container"></div>
-    </div>
-</div>
-
-<script>
-    // 1. IMPORTANT: Replace this with your new, SECURE API key from Google AI Studio
-    const GEMINI_API_KEY = "AQ.Ab8RN6KZd76FgE14Gvtj7gqijn5i0gM7udb8-TNPm20aujD5rQ";
-    const socket = io("https://felix-quiz-arena.onrender.com");
-    let username = "", currentIdx = 0, myScore = 0, gameQuestions = [];
-
-    function login() { username = document.getElementById('username-input').value.trim(); if(username) { document.getElementById('login-screen').classList.add('hidden'); document.getElementById('menu-screen').classList.remove('hidden'); } }
-
-    // Original AI logic
-    async function fetchAIQuestions(count, subject) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: `Generate 5 MCQs on ${subject}. Format as JSON: [{"question":"...","options":["..."],"correct":"..."}]` }] }] }) });
-        const data = await response.json();
-        return JSON.parse(data.candidates[0].content.parts[0].text.replace(/```json/g, "").replace(/```/g, "").trim());
-    }
-
-    async function startMatch(mode) {
-        gameQuestions = await fetchAIQuestions(5, mode);
-        document.getElementById('menu-screen').classList.add('hidden');
-        document.getElementById('game-screen').classList.remove('hidden');
-        renderQuestion();
-    }
-
-    // NEW Private Match logic
-    function createPrivateMatch() {
-        const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-        socket.emit('createPrivateRoom', { username: username, roomCode: roomCode });
-        alert("Share this code with your friend: " + roomCode);
-    }
-
-    function promptJoinMatch() {
-        const roomCode = prompt("Enter the Private Room Code:");
-        if (roomCode) socket.emit('joinPrivateRoom', { username: username, roomCode: roomCode });
-    }
-
-    // Existing rendering logic
-    function renderQuestion() { /* ...your existing render logic... */ }
-    function checkAnswer(selected, correct) { /* ...your existing answer logic... */ }
-</script>
+        function render() {
+            let q = questions[qIdx];
+            document.getElementById('q').innerText = q.question;
+            let opts = document.getElementById('opts'); opts.innerHTML = '';
+            q.options.forEach(o => {
+                let b = document.createElement('button'); b.className = 'btn'; b.innerText = o;
+                b.onclick = () => { if(o === q.correct) score += 10; qIdx++; render(); };
+                opts.appendChild(b);
+            });
+        }
+        function createPrivate() { socket.emit('createPrivateRoom', { roomCode: 'ROOM1' }); alert('Room created'); }
+        function joinPrivate() { socket.emit('joinPrivateRoom', { roomCode: 'ROOM1' }); alert('Joined'); }
+    </script>
 </body>
 </html>
