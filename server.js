@@ -2,12 +2,13 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, { cors: { origin: "*" } });
-const fetch = require('node-fetch'); // Make sure to run: npm install node-fetch
+// This line requires the dependency you added to package.json
+const fetch = require('node-fetch'); 
 
-app.use(express.json()); // Essential to read the prompt from your game
+app.use(express.json());
 app.use(express.static(__dirname));
 
-// The Secure Proxy Route
+// The Bridge: Your JS talks to this, and this talks to Gemini
 app.post('/api/generate', async (req, res) => {
     const { prompt } = req.body;
     try {
@@ -19,9 +20,10 @@ app.post('/api/generate', async (req, res) => {
         const data = await response.json();
         res.json(data);
     } catch (err) {
-        res.status(500).send("Error generating questions");
+        console.error(err);
+        res.status(500).json({ error: "Failed to fetch from Gemini" });
     }
 });
 
-// ... Keep your existing socket.io code here ...
+// Keep your existing socket logic here...
 http.listen(process.env.PORT || 3000);
